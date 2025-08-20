@@ -9,21 +9,27 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.anonymous.fitnessdatacollection",
+      "infoPlist": {
+        "NSHealthShareUsageDescription": "Usamos seus dados de Saúde (ex.: passos) para mostrar seu progresso diário.",
+        "NSHealthUpdateUsageDescription": "Gravamos dados de Saúde para atualizar seu progresso."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.anonymous.fitnessdatacollection"
     },
     "web": {
       "bundler": "metro",
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
-    "plugins": [
+     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
@@ -33,7 +39,16 @@
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
         }
-      ]
+      ],
+      [
+        "@kingstinct/react-native-healthkit",
+        {
+          "NSHealthShareUsageDescription": "Usamos seus dados de Saúde (ex.: passos) para mostrar seu progresso diário.",
+          "NSHealthUpdateUsageDescription": "Gravamos dados de Saúde para atualizar seu progresso.",
+          "background": true
+        }
+      ],
+      "expo-health-connect"
     ],
     "experiments": {
       "typedRoutes": true

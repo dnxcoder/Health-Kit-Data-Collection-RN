@@ -1,75 +1,176 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+// app/steps-ios.tsx
+import {
+  isHealthDataAvailable,
+  queryQuantitySamples
+} from "@kingstinct/react-native-healthkit";
+import React, { useCallback, useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  AppState,
+  Linking,
+  Platform,
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  Text,
+  View,
+} from "react-native";
 
-import { HelloWave } from '@/components/HelloWave';
-import ParallaxScrollView from '@/components/ParallaxScrollView';
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
+type AuthState = "unknown" | "authorized" | "denied";
+const STEP_TYPE = "HKQuantityTypeIdentifierStepCount";
 
-export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
-  );
+function startOfToday() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
 }
 
-const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
-  },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
-  },
-});
+export default function StepsIOSScreen() {
+  const [loading, setLoading] = useState(false);
+  const [steps, setSteps] = useState<number | null>(null);
+  const [auth, setAuth] = useState<AuthState>("unknown");
+  const [hasTrackStepsPermision, setHasTrackStepsPermision] = useState(false);
+
+  const openSettings = () => {
+    Linking.openSettings().catch(() => {
+      Alert.alert(
+        "Abra as Configurações",
+        "Ajustes → Saúde → Apps → (seu app) e permita “Passos”."
+      );
+    });
+  };
+
+  const readTodaySteps = useCallback(async () => {
+    // v10: sem filtros nativos; filtra por data no JS
+    const samples = await queryQuantitySamples(STEP_TYPE, {});
+    const today = startOfToday();
+    const total = (samples ?? [])
+      .filter(s => new Date(s.startDate) >= today)
+      .reduce((acc, s) => acc + (s.quantity ?? 0), 0);
+    return Math.round(total);
+  }, []);
+
+  const fetchSteps = useCallback(async () => {
+    if (Platform.OS !== "ios") {
+      Alert.alert("Somente iOS", "Esta tela usa HealthKit (iPhone real).");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const available = await isHealthDataAvailable();
+      if (!available) throw new Error("HealthKit não disponível no simulador.");
+
+      // pedimos poucas amostras; algumas versões aceitam {} como opções
+      const samples = await queryQuantitySamples(STEP_TYPE, { /* limit: 1 */ });
+      
+    
+      if (samples.length === 0) {
+        setAuth("denied");
+        setSteps(null);
+        return; // não tenta ler se está negado
+      }
+
+      const total = await readTodaySteps();
+      setSteps(total);
+      setAuth("authorized");
+    } catch (e: any) {
+      // Qualquer erro inesperado
+      setAuth("unknown");
+      setSteps(null);
+      Alert.alert("Erro ao obter passos", e?.message ?? String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [readTodaySteps]);
+
+  // Busca inicial
+  useEffect(() => {
+    fetchSteps();
+  }, [fetchSteps]);
+
+  // Revalidar quando voltar do background (ex.: depois de abrir Configurações)
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", state => {
+      if (state === "active") {
+        fetchSteps();
+      }
+    });
+    return () => sub.remove();
+  }, [fetchSteps]);
+
+
+  useEffect(()=> {
+     setHasTrackStepsPermision(auth === "denied");
+  },[auth])
+ 
+
+  return (
+    <SafeAreaView style={{ flex: 1, padding: 24 }}>
+      <ScrollView
+        contentContainerStyle={{ flexGrow: 1, justifyContent: "center", alignItems: "center" }}
+      >
+       
+        {loading ? (
+          <ActivityIndicator />
+        ) : hasTrackStepsPermision ? (
+          <View style={{ alignItems: "center" }}>
+            <Text style={{ textAlign: "center", color: "#cc0000", marginBottom: 12, fontSize:24, fontWeight:"bold" }}>
+              Permissão de “Passos” negada.
+            </Text>
+            <Text style={{ textAlign: "center", color: "#666", marginBottom: 16 }}>
+              Para continuar, ative “Passos” para este app em:
+              {"\n"}Ajustes → Saúde → Apps → (seu app).
+            </Text>
+            <Pressable
+              onPress={openSettings}
+              style={{
+                backgroundColor: "#1f6feb",
+                paddingVertical: 12,
+                paddingHorizontal: 18,
+                borderRadius: 12,
+              }}
+            >
+              <Text style={{ color: "#fff", fontWeight: "700" }}>Abrir Configurações</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <>
+
+ <Text style={{ fontSize: 22, fontWeight: "700", marginBottom: 8 }}>
+          Passos de hoje (iOS / HealthKit)
+        </Text>
+        <Text style={{ color: "#666", marginBottom: 24 }}>
+          {new Intl.DateTimeFormat(undefined, { dateStyle: "full" }).format(new Date())}
+        </Text>
+
+
+            <Text style={{ fontSize: 56, fontWeight: "800" }}>
+              {steps ?? "--"}
+            </Text>
+            <Text style={{ color: "#666" }}>passos</Text>
+             <Pressable
+          onPress={fetchSteps}
+          style={{
+            marginTop: 24,
+            backgroundColor: "#1f6feb",
+            paddingVertical: 12,
+            paddingHorizontal: 18,
+            borderRadius: 12,
+            opacity: loading ? 0.7 : 1,
+          }}
+          disabled={loading}
+        >
+          <Text style={{ color: "#fff", fontWeight: "700" }}>
+            {loading ? "Atualizando..." : "Atualizar"}
+          </Text>
+        </Pressable>
+          </>
+        )}
+
+       
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
